@@ -68,7 +68,20 @@
     // 쇼츠와 일반 동영상을 구분해서 처리
     const isShorts = item.tagName.toLowerCase().includes('shorts') || 
                      item.className.includes('shorts') ||
-                     item.querySelector('a[href*="/shorts"]');
+                     item.querySelector('a[href*="/shorts"]') ||
+                     item.querySelector('[href*="/shorts"]');
+    
+    // 공통 셀렉터들 (Shorts와 일반 영상 모두)
+    const commonSelectors = [
+      '#thumbnail',
+      'a#thumbnail',
+      'ytd-thumbnail a',
+      'ytd-thumbnail',
+      'yt-img-shadow img',
+      '.thumbnail',
+      'img[src*="ytimg.com"]',
+      'img.ytCoreImageHost'
+    ];
     
     const selectors = isShorts ? [
       // 쇼츠 썸네일 (실제 구조 기반)
@@ -76,29 +89,16 @@
       '.shortsLockupViewModelHostThumbnailParentContainer', 
       '.shortsLockupViewModelHostThumbnail',
       'img.shortsLockupViewModelHostThumbnail',
-      'img.ytCoreImageHost',
       'a[href*="/shorts"]',
-      'img[src*="ytimg.com"]'
+      ...commonSelectors
     ] : [
       // 일반 동영상 썸네일 (실제 구조 기반)
       '.yt-lockup-view-model__content-image',
       'yt-thumbnail-view-model',
       '.ytThumbnailViewModelImage',
-      'img.ytCoreImageHost',
       'a[href*="/watch"]',
-      'img[src*="ytimg.com"]'
+      ...commonSelectors
     ];
-    
-    // 공통 셀렉터들도 추가
-    selectors.push(
-      '#thumbnail',
-      'a#thumbnail',
-      'ytd-thumbnail a',
-      'ytd-thumbnail',
-      'yt-img-shadow img',
-      '.thumbnail',
-      '[class*="thumbnail"]'
-    );
     
     for (const selector of selectors) {
       const thumbnail = utils.findElement(selector, item);
@@ -126,8 +126,14 @@
 
   // 아이템에 삭제 오버레이 추가
   function addDeleteOverlay(item) {
+    // 이미 마운트되었는지 확인하되, 실제 오버레이가 있는지도 확인
     if (item.getAttribute('data-dh-mounted') === '1') {
-      return; // 이미 마운트됨
+      const existingOverlay = item.querySelector('.dh-delete-overlay');
+      if (existingOverlay) {
+        return; // 이미 마운트되고 오버레이도 있음
+      }
+      // 마운트 표시는 있지만 실제 오버레이가 없으면 다시 처리
+      item.removeAttribute('data-dh-mounted');
     }
 
     const thumbnail = findThumbnailContainer(item);
@@ -188,15 +194,15 @@
   }
 
   // 메뉴 항목 찾기
-  function findDeleteMenuItem() {
+  async function findDeleteMenuItem() {
     // 메뉴가 열렸는지 확인 (실제 구조 기반)
     const menuSelectors = [
-      'tp-yt-iron-dropdown',
+      'ytd-popup-container', // 실제 메뉴 컨테이너
+      'tp-yt-iron-dropdown', // 드롭다운 컨테이너
+      'yt-sheet-view-model', // 시트 뷰 모델
+      'yt-contextual-sheet-layout', // 컨텍스트 시트 레이아웃
       'ytd-menu-popup-renderer',
-      'ytd-menu-renderer',
-      '[role="menu"]',
-      '.ytd-menu-popup-renderer',
-      'yt-menu-popup-renderer'
+      'ytd-menu-renderer'
     ];
     
     let menu = null;
@@ -208,8 +214,32 @@
     }
     
     if (!menu) {
-      console.log('DelHist: 열린 메뉴를 찾을 수 없음');
       return null;
+    }
+
+    // 메뉴 항목들이 로드될 때까지 대기
+    let attempts = 0;
+    const maxAttempts = 15;
+    
+    while (attempts < maxAttempts) {
+      await utils.sleep(200);
+      attempts++;
+      
+      // 메뉴 내부뿐만 아니라 전체 문서에서 메뉴 항목들을 찾기
+      const hasMenuItems = menu.querySelector('[role="menuitem"]') || 
+                          menu.querySelector('yt-list-item-view-model') ||
+                          menu.querySelector('yt-list-view-model') ||
+                          document.querySelector('yt-list-item-view-model[role="menuitem"]') ||
+                          document.querySelector('yt-list-item-view-model') ||
+                          menu.textContent.includes('시청 기록에서 삭제') ||
+                          menu.textContent.includes('Remove from watch history') ||
+                          document.body.textContent.includes('시청 기록에서 삭제') ||
+                          document.body.textContent.includes('Remove from watch history') ||
+                          menu.textContent.trim().length > 50; // 메뉴 버튼만 있는 경우보다 긴 텍스트
+      
+      if (hasMenuItems) {
+        break;
+      }
     }
 
     // 메뉴 항목들 찾기 (실제 구조 기반)
@@ -217,6 +247,7 @@
       // 실제 구조 기반 셀렉터들 (우선순위 높음)
       'yt-list-item-view-model[role="menuitem"]',
       'yt-list-item-view-model',
+      'span[role="text"]', // 사용자가 제공한 HTML 구조에 맞춤
       '.yt-list-item-view-model__title',
       'span.yt-list-item-view-model__title',
       
@@ -229,6 +260,7 @@
       'a[role="menuitem"]'
     ];
 
+    // 먼저 메뉴 내부에서 찾기
     for (const selector of itemSelectors) {
       const items = utils.findElements(selector, menu);
       
@@ -238,6 +270,83 @@
         if (CONFIG.DELETE_LABELS.some(label => text.includes(label))) {
           // yt-list-item-view-model이면 바로 반환 (실제 구조 기반)
           if (item.tagName.toLowerCase() === 'yt-list-item-view-model') {
+            return item;
+          }
+          
+          // span[role="text"]인 경우 부모 요소 찾기
+          if (item.tagName.toLowerCase() === 'span' && item.getAttribute('role') === 'text') {
+            let parent = item.parentElement;
+            let depth = 0;
+            while (parent && depth < 5) {
+              if (parent.tagName.toLowerCase() === 'yt-list-item-view-model' ||
+                  parent.getAttribute('role') === 'menuitem' ||
+                  parent.tagName === 'BUTTON' || 
+                  parent.tagName === 'A' ||
+                  parent.onclick ||
+                  parent.style.cursor === 'pointer') {
+                return parent;
+              }
+              parent = parent.parentElement;
+              depth++;
+            }
+            // 부모를 찾지 못했으면 span 자체 반환
+            return item;
+          }
+          
+          // 클릭 가능한 부모 요소 찾기
+          let clickableParent = item;
+          let depth = 0;
+          while (clickableParent && depth < 5) {
+            if (clickableParent.tagName.toLowerCase() === 'yt-list-item-view-model' ||
+                clickableParent.getAttribute('role') === 'menuitem' ||
+                clickableParent.tagName === 'BUTTON' || 
+                clickableParent.tagName === 'A' ||
+                clickableParent.onclick ||
+                clickableParent.style.cursor === 'pointer' ||
+                clickableParent.classList.contains('yt-spec-button-shape-next') ||
+                clickableParent.classList.contains('ytd-menu-service-item-renderer')) {
+              return clickableParent;
+            }
+            clickableParent = clickableParent.parentElement;
+            depth++;
+          }
+          
+          // 부모를 찾지 못했으면 텍스트 요소 자체를 반환
+          return item;
+        }
+      }
+    }
+    
+    // 메뉴 내부에서 찾지 못했으면 전체 문서에서 찾기
+    for (const selector of itemSelectors) {
+      const items = utils.findElements(selector, document);
+      
+      for (const item of items) {
+        const text = item.textContent.trim();
+        
+        if (CONFIG.DELETE_LABELS.some(label => text.includes(label))) {
+          // yt-list-item-view-model이면 바로 반환 (실제 구조 기반)
+          if (item.tagName.toLowerCase() === 'yt-list-item-view-model') {
+            return item;
+          }
+          
+          // span[role="text"]인 경우 부모 요소 찾기
+          if (item.tagName.toLowerCase() === 'span' && item.getAttribute('role') === 'text') {
+            let parent = item.parentElement;
+            let depth = 0;
+            while (parent && depth < 5) {
+              if (parent.tagName.toLowerCase() === 'yt-list-item-view-model' ||
+                  parent.getAttribute('role') === 'menuitem' ||
+                  parent.tagName === 'BUTTON' || 
+                  parent.tagName === 'A' ||
+                  parent.onclick ||
+                  parent.style.cursor === 'pointer') {
+                return parent;
+              }
+              parent = parent.parentElement;
+              depth++;
+            }
+            // 부모를 찾지 못했으면 span 자체 반환
             return item;
           }
           
@@ -284,11 +393,12 @@
       // 메뉴가 열릴 때까지 대기
       await utils.waitFor(() => {
         const menuSelectors = [
-          'tp-yt-iron-dropdown',
+          'ytd-popup-container', // 실제 메뉴 컨테이너
+          'tp-yt-iron-dropdown', // 드롭다운 컨테이너
+          'yt-sheet-view-model', // 시트 뷰 모델
+          'yt-contextual-sheet-layout', // 컨텍스트 시트 레이아웃
           'ytd-menu-popup-renderer',
-          'ytd-menu-renderer',
-          '[role="menu"]',
-          '.ytd-menu-popup-renderer'
+          'ytd-menu-renderer'
         ];
         
         for (const selector of menuSelectors) {
@@ -302,8 +412,8 @@
 
       await utils.sleep(200); // 메뉴 애니메이션 대기
 
-      // 삭제 메뉴 항목 찾기 및 클릭
-      const deleteItem = findDeleteMenuItem();
+        // 삭제 메뉴 항목 찾기 및 클릭
+        const deleteItem = await findDeleteMenuItem();
       if (!deleteItem) {
         throw new Error('삭제 메뉴 항목을 찾을 수 없음');
       }
@@ -554,6 +664,11 @@
 
     // 시청 기록 페이지인지 확인 (데스크톱과 모바일 모두)
     if (!location.href.includes('/feed/history')) {
+      return;
+    }
+    
+    // Shorts 페이지는 제외하되, 시청 기록 페이지 내의 Shorts 영상은 포함
+    if (location.href.includes('/shorts') && !location.href.includes('/feed/history')) {
       return;
     }
 

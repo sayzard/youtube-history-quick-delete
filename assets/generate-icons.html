@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Icon Generator</title>
+</head>
+<body>
+    <canvas id="canvas16" width="16" height="16"></canvas>
+    <canvas id="canvas48" width="48" height="48"></canvas>
+    <canvas id="canvas128" width="128" height="128"></canvas>
+    
+    <script>
+        function drawIcon(canvas, size) {
+            const ctx = canvas.getContext('2d');
+            const scale = size / 128;
+            
+            // 배경
+            ctx.fillStyle = '#FF0000';
+            ctx.fillRect(0, 0, size, size);
+            
+            // 휴지통 몸체
+            ctx.fillStyle = 'white';
+            ctx.fillRect(size * 0.25, size * 0.31, size * 0.5, size * 0.44);
+            
+            // 휴지통 뚜껑
+            ctx.fillRect(size * 0.34, size * 0.25, size * 0.32, size * 0.03);
+            
+            // 휴지통 상단
+            ctx.fillRect(size * 0.41, size * 0.19, size * 0.19, size * 0.03);
+            
+            // 휴지통 구멍들
+            ctx.fillStyle = '#FF0000';
+            ctx.fillRect(size * 0.34, size * 0.44, size * 0.06, size * 0.25);
+            ctx.fillRect(size * 0.5, size * 0.44, size * 0.06, size * 0.25);
+        }
+        
+        drawIcon(document.getElementById('canvas16'), 16);
+        drawIcon(document.getElementById('canvas48'), 48);
+        drawIcon(document.getElementById('canvas128'), 128);
+        
+        // PNG로 다운로드
+        setTimeout(() => {
+            document.getElementById('canvas16').toBlob(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'icon16.png';
+                a.click();
+            });
+            
+            document.getElementById('canvas48').toBlob(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'icon48.png';
+                a.click();
+            });
+            
+            document.getElementById('canvas128').toBlob(blob => {
+                const url = URL.createObjectURL(blob);
+                a.href = url;
+                a.download = 'icon128.png';
+                a.click();
+            });
+        }, 1000);
+    </script>
+</body>
+</html>

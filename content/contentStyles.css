@@ -1,0 +1,73 @@
+/* YouTube History Quick Delete - Content Styles */
+
+.dh-delete-overlay {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 32px;
+  height: 32px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.2s ease;
+  border: none;
+  outline: none;
+}
+
+.dh-delete-overlay:hover {
+  background: rgba(255, 0, 0, 0.8);
+  transform: scale(1.1);
+}
+
+.dh-delete-overlay:focus {
+  background: rgba(255, 0, 0, 0.8);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
+}
+
+.dh-delete-overlay svg {
+  width: 16px;
+  height: 16px;
+  fill: white;
+  pointer-events: none;
+}
+
+.dh-delete-overlay:active {
+  transform: scale(0.95);
+}
+
+/* 썸네일 컨테이너에 relative 포지셔닝 보정 */
+ytd-video-renderer #thumbnail,
+ytd-compact-video-renderer #thumbnail,
+ytd-reel-item-renderer #thumbnail {
+  position: relative !important;
+}
+
+/* 삭제 중 애니메이션 */
+.dh-deleting {
+  opacity: 0.5;
+  transform: scale(0.95);
+  transition: all 0.3s ease;
+}
+
+.dh-deleted {
+  opacity: 0;
+  transform: scale(0.8);
+  transition: all 0.3s ease;
+}
+
+/* 다크 테마 대응 */
+html[dark] .dh-delete-overlay {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html[dark] .dh-delete-overlay:hover {
+  background: rgba(255, 0, 0, 0.8);
+}
+
+html[dark] .dh-delete-overlay:focus {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+}

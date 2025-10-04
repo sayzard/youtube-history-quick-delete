@@ -2,16 +2,18 @@
 
 A Chrome extension that adds quick delete buttons to YouTube watch history items, allowing you to easily remove unwanted videos and shorts from your history.
 
-![YouTube History Quick Delete Demo](https://raw.githubusercontent.com/sayzard/youtube-history-quick-delete/main/assets/demo-screenshot.png)
+## 📸 Demo Screenshot
 
-*Screenshot showing delete buttons (trash can icons) on video thumbnails in YouTube watch history*
+*The extension adds red trash can delete buttons to the top-left corner of all video thumbnails in your YouTube watch history.*
 
-**What you can see:**
+**What you'll see:**
 - ✅ Delete buttons on YouTube Shorts (top-left corner of thumbnails)
 - ✅ Delete buttons on regular videos 
 - ✅ Dark theme compatibility
 - ✅ Korean interface support
 - ✅ Seamless integration with YouTube's UI
+
+*Note: Screenshot shows the extension working on YouTube's watch history page with both Shorts and regular videos displaying delete overlay buttons.*
 
 ## Features
 

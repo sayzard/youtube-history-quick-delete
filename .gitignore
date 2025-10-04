@@ -31,3 +31,6 @@ build/
 # Temporary files
 *.tmp
 *.temp
+
+# Internal scripts (not for public use)
+push-both.sh

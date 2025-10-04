@@ -103,6 +103,6 @@ echo ""
 
 # 패키지 내용 표시
 echo "📂 패키지 내용:"
-unzip -l "${BUILD_DIR}/${PACKAGE_NAME}.zip" | tail -n +4 | head -n -2
+unzip -l "${BUILD_DIR}/${PACKAGE_NAME}.zip" | tail -n +4 | sed '$d' | sed '$d'
 echo ""
 

@@ -203,7 +203,6 @@
     for (const selector of menuSelectors) {
       menu = utils.findElement(selector);
       if (menu && menu.style.display !== 'none' && menu.offsetHeight > 0) {
-        console.log(`DelHist: 메뉴 발견 (${selector}):`, menu);
         break;
       }
     }

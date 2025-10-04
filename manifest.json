@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube History Quick Delete",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "유튜브 시청 기록에서 영상과 쇼츠를 빠르게 삭제할 수 있는 확장 프로그램",
   "author": "Your Name",
   "homepage_url": "https://github.com/YOUR_USERNAME/youtube-history-quick-delete",

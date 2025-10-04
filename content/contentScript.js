@@ -84,7 +84,10 @@
     ];
     
     const selectors = isShorts ? [
-      // 쇼츠 썸네일 (실제 구조 기반)
+      // 쇼츠 썸네일 (실제 구조 기반) - 우선순위 높음
+      'ytd-thumbnail', // Shorts도 ytd-thumbnail 사용
+      'a#thumbnail',
+      '#thumbnail',
       '.shortsLockupViewModelHostThumbnailContainer',
       '.shortsLockupViewModelHostThumbnailParentContainer', 
       '.shortsLockupViewModelHostThumbnail',
@@ -93,6 +96,9 @@
       ...commonSelectors
     ] : [
       // 일반 동영상 썸네일 (실제 구조 기반)
+      'ytd-thumbnail',
+      'a#thumbnail',
+      '#thumbnail',
       '.yt-lockup-view-model__content-image',
       'yt-thumbnail-view-model',
       '.ytThumbnailViewModelImage',
@@ -152,7 +158,21 @@
     overlay.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation();
       deleteHistoryItem(item, overlay);
+    });
+    
+    // 추가적인 이벤트 차단
+    overlay.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+    
+    overlay.addEventListener('mouseup', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
     });
 
     thumbnail.appendChild(overlay);
@@ -162,25 +182,34 @@
   // 메뉴 버튼 찾기
   function findMenuButton(item) {
     const selectors = [
-      // 실제 구조 기반 셀렉터들
+      // 실제 구조 기반 셀렉터들 (Shorts와 일반 영상 모두)
       'button[aria-label="추가 작업"]',
+      'button[aria-label="작업 메뉴"]',
       'button[title="추가 작업"]',
+      'button[title="작업 메뉴"]',
       '.yt-spec-button-shape-next--icon-button',
       'button.yt-spec-button-shape-next',
       
-      // 기존 셀렉터들 (백업용)
+      // ytd-menu-renderer 내부 버튼들
       'ytd-menu-renderer button[aria-haspopup="menu"]',
       'ytd-menu-renderer #button',
       'ytd-menu-renderer yt-icon-button',
-      'button[aria-haspopup="menu"]',
+      'ytd-menu-renderer button',
       
       // 일반적인 메뉴 버튼 패턴들
+      'button[aria-haspopup="menu"]',
       'button[aria-label*="추가"]',
       'button[aria-label*="메뉴"]',
       'button[aria-label*="옵션"]',
+      'button[aria-label*="작업"]',
       'button[title*="추가"]',
       'button[title*="메뉴"]',
-      'button[title*="옵션"]'
+      'button[title*="옵션"]',
+      'button[title*="작업"]',
+      
+      // 아이템 내부의 모든 버튼 (백업용)
+      'button',
+      'yt-icon-button'
     ];
 
     for (const selector of selectors) {
@@ -244,7 +273,13 @@
 
     // 메뉴 항목들 찾기 (실제 구조 기반)
     const itemSelectors = [
-      // 실제 구조 기반 셀렉터들 (우선순위 높음)
+      // 새로운 메뉴 구조 (ytd-menu-popup-renderer 기반)
+      'ytd-menu-service-item-renderer[role="menuitem"]',
+      'ytd-menu-service-item-renderer',
+      'tp-yt-paper-item[role="option"]',
+      'tp-yt-paper-item',
+      
+      // 기존 구조 (yt-sheet-view-model 기반)
       'yt-list-item-view-model[role="menuitem"]',
       'yt-list-item-view-model',
       'span[role="text"]', // 사용자가 제공한 HTML 구조에 맞춤
@@ -252,7 +287,6 @@
       'span.yt-list-item-view-model__title',
       
       // 기존 셀렉터들 (백업용)
-      'ytd-menu-service-item-renderer',
       'ytd-menu-popup-renderer ytd-menu-service-item-renderer',
       '[role="menuitem"]',
       'yt-menu-service-item-renderer',
@@ -268,7 +302,27 @@
         const text = item.textContent.trim();
         
         if (CONFIG.DELETE_LABELS.some(label => text.includes(label))) {
-          // yt-list-item-view-model이면 바로 반환 (실제 구조 기반)
+          // 새로운 메뉴 구조 (ytd-menu-service-item-renderer) 처리
+          if (item.tagName.toLowerCase() === 'ytd-menu-service-item-renderer') {
+            return item;
+          }
+          
+          // tp-yt-paper-item인 경우 부모 요소 찾기
+          if (item.tagName.toLowerCase() === 'tp-yt-paper-item') {
+            let parent = item.parentElement;
+            let depth = 0;
+            while (parent && depth < 5) {
+              if (parent.tagName.toLowerCase() === 'ytd-menu-service-item-renderer' ||
+                  parent.getAttribute('role') === 'menuitem') {
+                return parent;
+              }
+              parent = parent.parentElement;
+              depth++;
+            }
+            return item;
+          }
+          
+          // 기존 구조 (yt-list-item-view-model) 처리
           if (item.tagName.toLowerCase() === 'yt-list-item-view-model') {
             return item;
           }
@@ -279,6 +333,7 @@
             let depth = 0;
             while (parent && depth < 5) {
               if (parent.tagName.toLowerCase() === 'yt-list-item-view-model' ||
+                  parent.tagName.toLowerCase() === 'ytd-menu-service-item-renderer' ||
                   parent.getAttribute('role') === 'menuitem' ||
                   parent.tagName === 'BUTTON' || 
                   parent.tagName === 'A' ||

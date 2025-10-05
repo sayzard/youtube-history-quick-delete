@@ -591,15 +591,29 @@
     }
     initialized = true;
 
-    scanHistoryItems();
+    // 초기 스캔 (재시도 로직 포함)
+    let retryCount = 0;
+    const maxRetries = 5;
+    const retryScan = () => {
+      const itemCount = scanHistoryItems();
 
-    // 동적 로딩 대응 (제한적)
+      // 아이템을 찾지 못했고 재시도 횟수가 남았으면 다시 시도
+      if (itemCount === 0 && retryCount < maxRetries) {
+        retryCount++;
+        setTimeout(retryScan, 500); // 500ms 후 재시도
+      } else if (itemCount > 0) {
+      } else {
+      }
+    };
+    retryScan();
+
+    // 동적 로딩 대응
     if (!mo) {
       mo = new MutationObserver((mutations) => {
         if (!isHistoryPage()) {
           return;
         }
-        
+
         // 변화가 있을 때만 스캔 (성능 최적화)
         let shouldScan = false;
         for (const mutation of mutations) {
@@ -608,20 +622,20 @@
             break;
           }
         }
-        
+
         if (shouldScan) {
           setTimeout(() => {
             scanHistoryItems();
           }, 500); // 디바운싱
         }
       });
-      mo.observe(document.body, { childList: true, subtree: false }); // subtree 제한
+      mo.observe(document.body, { childList: true, subtree: true }); // subtree 활성화
     }
   }
 
   // 라우트 변경 처리
   function onRouteChange() {
-    
+
     if (isHistoryPage()) {
       addOverlaysIfNeeded();
     } else {
@@ -632,7 +646,7 @@
 
   // 시청 기록 아이템들 스캔 (성능 최적화)
   function scanHistoryItems() {
-    
+
     // 실제 HTML 구조에 맞는 셀렉터들 (업데이트됨)
     const selectors = [
       'yt-lockup-view-model',           // 새로운 구조 (실제 HTML에서 확인됨)
@@ -647,10 +661,10 @@
 
     let totalItems = 0;
     let processedItems = new Set();
-    
+
     for (const selector of selectors) {
       const items = document.querySelectorAll(selector);
-      
+
       for (const item of items) {
         // 이미 처리된 아이템인지 확인
         if (processedItems.has(item)) continue;
@@ -666,11 +680,11 @@
           addDeleteOverlay(item);
           processedItems.add(item);
           totalItems++;
-        } else {
         }
       }
     }
-    
+
+    return totalItems; // 처리한 아이템 개수 반환
   }
   
   // 비디오 아이템인지 확인하는 함수

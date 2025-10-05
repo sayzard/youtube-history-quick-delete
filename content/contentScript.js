@@ -15,6 +15,18 @@
     MAX_RETRIES: 4
   };
 
+  // SPA 라우팅 관리
+  let overlayRoots = new Set();       // 붙인 오버레이 루트 노드들 추적
+  let mo;                             // MutationObserver
+  let initialized = false;
+  let deletedItems = new WeakSet();   // 삭제된 아이템 추적
+
+  // 시청기록 페이지인지 확인
+  function isHistoryPage() {
+    const isHistory = location.pathname.startsWith('/feed/history');
+    return isHistory;
+  }
+
   // 유틸리티 함수들
   const utils = {
     waitFor: (condition, timeout = 3000) => {
@@ -65,45 +77,25 @@
 
   // 썸네일 컨테이너 찾기
   function findThumbnailContainer(item) {
+    
     // 쇼츠와 일반 동영상을 구분해서 처리
     const isShorts = item.tagName.toLowerCase().includes('shorts') || 
                      item.className.includes('shorts') ||
                      item.querySelector('a[href*="/shorts"]') ||
                      item.querySelector('[href*="/shorts"]');
     
-    // 공통 셀렉터들 (Shorts와 일반 영상 모두)
-    const commonSelectors = [
-      '#thumbnail',
-      'a#thumbnail',
-      'ytd-thumbnail a',
-      'ytd-thumbnail',
-      'yt-img-shadow img',
-      '.thumbnail',
-      'img[src*="ytimg.com"]',
-      'img.ytCoreImageHost'
-    ];
-    
-    const selectors = isShorts ? [
-      // 쇼츠 썸네일 (실제 구조 기반) - 우선순위 높음
-      'ytd-thumbnail', // Shorts도 ytd-thumbnail 사용
+    // 실제 HTML 구조에 맞는 셀렉터들 (업데이트됨)
+    const selectors = [
+      'yt-thumbnail-view-model',  // 새로운 구조
+      'ytd-thumbnail',            // 기존 구조
+      'a.yt-lockup-view-model__content-image', // 실제 링크 요소
+      'a.shortsLockupViewModelHostEndpoint', // Shorts 링크 요소
+      'div.shortsLockupViewModelHostThumbnailContainer', // Shorts 썸네일 컨테이너
+      'a[href*="/watch"]',        // 비디오 링크
+      'a[href*="/shorts"]',       // Shorts 링크
       'a#thumbnail',
       '#thumbnail',
-      '.shortsLockupViewModelHostThumbnailContainer',
-      '.shortsLockupViewModelHostThumbnailParentContainer', 
-      '.shortsLockupViewModelHostThumbnail',
-      'img.shortsLockupViewModelHostThumbnail',
-      'a[href*="/shorts"]',
-      ...commonSelectors
-    ] : [
-      // 일반 동영상 썸네일 (실제 구조 기반)
-      'ytd-thumbnail',
-      'a#thumbnail',
-      '#thumbnail',
-      '.yt-lockup-view-model__content-image',
-      'yt-thumbnail-view-model',
-      '.ytThumbnailViewModelImage',
-      'a[href*="/watch"]',
-      ...commonSelectors
+      'img[src*="ytimg.com"]'
     ];
     
     for (const selector of selectors) {
@@ -113,10 +105,10 @@
       }
     }
 
-    // 부모 요소들도 확인
+    // 부모 요소들도 확인 (최대 3단계까지만)
     let parent = item.parentElement;
     let depth = 0;
-    while (parent && depth < 5) {
+    while (parent && depth < 3) {
       for (const selector of selectors) {
         const thumbnail = utils.findElement(selector, parent);
         if (thumbnail) {
@@ -132,6 +124,12 @@
 
   // 아이템에 삭제 오버레이 추가
   function addDeleteOverlay(item) {
+    
+    // 시청기록 페이지가 아니면 오버레이 추가하지 않음
+    if (!isHistoryPage()) {
+      return;
+    }
+    
     // 이미 마운트되었는지 확인하되, 실제 오버레이가 있는지도 확인
     if (item.getAttribute('data-dh-mounted') === '1') {
       const existingOverlay = item.querySelector('.dh-delete-overlay');
@@ -144,9 +142,9 @@
 
     const thumbnail = findThumbnailContainer(item);
     if (!thumbnail) {
-      console.log('DelHist: 썸네일을 찾을 수 없음', item);
       return;
     }
+
 
     // 썸네일 컨테이너에 relative 포지셔닝 보정
     const computedStyle = window.getComputedStyle(thumbnail);
@@ -155,6 +153,7 @@
     }
 
     const overlay = createDeleteOverlay();
+    
     overlay.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -177,10 +176,15 @@
 
     thumbnail.appendChild(overlay);
     item.setAttribute('data-dh-mounted', '1');
+    
+    // 오버레이 루트 노드 추적에 추가
+    overlayRoots.add(item);
+    
   }
 
-  // 메뉴 버튼 찾기
+  // 메뉴 버튼 찾기 (개선된 버전)
   function findMenuButton(item) {
+    
     const selectors = [
       // 실제 구조 기반 셀렉터들 (Shorts와 일반 영상 모두)
       'button[aria-label="추가 작업"]',
@@ -190,6 +194,11 @@
       '.yt-spec-button-shape-next--icon-button',
       'button.yt-spec-button-shape-next',
       
+      // 새로운 구조 셀렉터들
+      'button-view-model button',
+      'yt-spec-button-shape-next',
+      'button[aria-haspopup="menu"]',
+      
       // ytd-menu-renderer 내부 버튼들
       'ytd-menu-renderer button[aria-haspopup="menu"]',
       'ytd-menu-renderer #button',
@@ -197,7 +206,6 @@
       'ytd-menu-renderer button',
       
       // 일반적인 메뉴 버튼 패턴들
-      'button[aria-haspopup="menu"]',
       'button[aria-label*="추가"]',
       'button[aria-label*="메뉴"]',
       'button[aria-label*="옵션"]',
@@ -219,10 +227,81 @@
       }
     }
     
+    // 부모 요소들도 확인
+    let parent = item.parentElement;
+    let depth = 0;
+    while (parent && depth < 3) {
+      for (const selector of selectors) {
+        const button = utils.findElement(selector, parent);
+        if (button) {
+          return button;
+        }
+      }
+      parent = parent.parentElement;
+      depth++;
+    }
+    
     return null;
   }
 
-  // 메뉴 항목 찾기
+  // 메뉴 항목 찾기 (개선된 버전)
+  async function findDeleteMenuItemSimple() {
+    
+    // 더 포괄적인 셀렉터들
+    const simpleSelectors = [
+      'ytd-menu-service-item-renderer',
+      'yt-list-item-view-model',
+      '[role="menuitem"]',
+      'button[role="menuitem"]',
+      'a[role="menuitem"]',
+      'div.yt-list-item-view-model__container',
+      'div.yt-list-item-view-model__label'
+    ];
+    
+    // 먼저 메뉴 컨테이너 내부에서 찾기
+    const menuContainers = [
+      'ytd-popup-container',
+      'tp-yt-iron-dropdown',
+      'yt-sheet-view-model',
+      'yt-contextual-sheet-layout',
+      'yt-list-view-model'
+    ];
+    
+    for (const containerSelector of menuContainers) {
+      const container = document.querySelector(containerSelector);
+      if (container && container.style.display !== 'none') {
+        
+        for (const selector of simpleSelectors) {
+          const items = container.querySelectorAll(selector);
+          
+          for (const item of items) {
+            const text = item.textContent.trim();
+            
+            if (CONFIG.DELETE_LABELS.some(label => text.includes(label))) {
+              return item;
+            }
+          }
+        }
+      }
+    }
+    
+    // 메뉴 컨테이너에서 찾지 못했으면 전체 문서에서 찾기
+    for (const selector of simpleSelectors) {
+      const items = document.querySelectorAll(selector);
+      
+      for (const item of items) {
+        const text = item.textContent.trim();
+        
+        if (CONFIG.DELETE_LABELS.some(label => text.includes(label))) {
+          return item;
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  // 메뉴 항목 찾기 (기존 복잡한 버전 - 백업용)
   async function findDeleteMenuItem() {
     // 메뉴가 열렸는지 확인 (실제 구조 기반)
     const menuSelectors = [
@@ -432,11 +511,11 @@
     return null;
   }
 
-  // 시청 기록에서 삭제 실행
+  // 시청 기록에서 삭제 실행 (개선된 버전)
   async function deleteHistoryItem(item, overlay) {
     try {
       overlay.classList.add('dh-deleting');
-      
+
       // 메뉴 버튼 찾기
       const menuButton = findMenuButton(item);
       if (!menuButton) {
@@ -444,73 +523,36 @@
       }
 
       menuButton.click();
-      
-      // 메뉴가 열릴 때까지 대기
-      await utils.waitFor(() => {
-        const menuSelectors = [
-          'ytd-popup-container', // 실제 메뉴 컨테이너
-          'tp-yt-iron-dropdown', // 드롭다운 컨테이너
-          'yt-sheet-view-model', // 시트 뷰 모델
-          'yt-contextual-sheet-layout', // 컨텍스트 시트 레이아웃
-          'ytd-menu-popup-renderer',
-          'ytd-menu-renderer'
-        ];
-        
-        for (const selector of menuSelectors) {
-          const menu = utils.findElement(selector);
-          if (menu && menu.style.display !== 'none' && menu.offsetHeight > 0) {
-            return true;
-          }
+
+      // 메뉴가 렌더링될 때까지 대기 (최대 2초)
+      let deleteItem = null;
+      for (let i = 0; i < 10; i++) {
+        await utils.sleep(200);
+        deleteItem = await findDeleteMenuItemSimple();
+        if (deleteItem) {
+          break;
         }
-        return false;
-      }, 3000);
+      }
 
-      await utils.sleep(200); // 메뉴 애니메이션 대기
-
-        // 삭제 메뉴 항목 찾기 및 클릭
-        const deleteItem = await findDeleteMenuItem();
       if (!deleteItem) {
         throw new Error('삭제 메뉴 항목을 찾을 수 없음');
       }
 
-      // 클릭 이벤트 시뮬레이션
-      const clickEvent = new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        view: window
-      });
-      
-      deleteItem.dispatchEvent(clickEvent);
-      
-      // 추가로 mousedown, mouseup 이벤트도 시뮬레이션
-      const mouseDownEvent = new MouseEvent('mousedown', {
-        bubbles: true,
-        cancelable: true,
-        view: window
-      });
-      
-      const mouseUpEvent = new MouseEvent('mouseup', {
-        bubbles: true,
-        cancelable: true,
-        view: window
-      });
-      
-      deleteItem.dispatchEvent(mouseDownEvent);
-      setTimeout(() => {
-        deleteItem.dispatchEvent(mouseUpEvent);
-      }, 50);
-      
-      // 삭제 완료 대기 후 아이템 제거
-      await utils.sleep(500);
-      item.classList.add('dh-deleted');
-      
-      setTimeout(() => {
-        item.remove();
-      }, 300);
+      deleteItem.click();
+
+      // 삭제 완료 대기
+      await utils.sleep(1000);
+
+
+      // 삭제된 아이템 추적
+      deletedItems.add(item);
+
+      // 오버레이 제거
+      overlay.remove();
 
     } catch (error) {
       overlay.classList.remove('dh-deleting');
-      
+
       // 실패 시 툴팁 표시
       overlay.title = '삭제 실패: ' + error.message;
       setTimeout(() => {
@@ -519,26 +561,88 @@
     }
   }
 
-  // 시청 기록 아이템들 스캔
+  // 모든 오버레이 제거
+  function removeAllOverlays() {
+
+    overlayRoots.forEach(root => {
+      const overlays = root.querySelectorAll('.dh-delete-overlay');
+      overlays.forEach(overlay => overlay.remove());
+      root.removeAttribute('data-dh-mounted');
+    });
+    overlayRoots.clear();
+    deletedItems = new WeakSet(); // 삭제된 아이템 목록 초기화
+    initialized = false;
+
+    if (mo) {
+      mo.disconnect();
+      mo = null;
+    }
+
+  }
+
+  // 오버레이 추가 (중복 안전)
+  function addOverlaysIfNeeded() {
+    if (!isHistoryPage()) {
+      return;
+    }
+    // 이미 초기화했다면 중복 주입 방지
+    if (initialized) {
+      return;
+    }
+    initialized = true;
+
+    scanHistoryItems();
+
+    // 동적 로딩 대응 (제한적)
+    if (!mo) {
+      mo = new MutationObserver((mutations) => {
+        if (!isHistoryPage()) {
+          return;
+        }
+        
+        // 변화가 있을 때만 스캔 (성능 최적화)
+        let shouldScan = false;
+        for (const mutation of mutations) {
+          if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+            shouldScan = true;
+            break;
+          }
+        }
+        
+        if (shouldScan) {
+          setTimeout(() => {
+            scanHistoryItems();
+          }, 500); // 디바운싱
+        }
+      });
+      mo.observe(document.body, { childList: true, subtree: false }); // subtree 제한
+    }
+  }
+
+  // 라우트 변경 처리
+  function onRouteChange() {
+    
+    if (isHistoryPage()) {
+      addOverlaysIfNeeded();
+    } else {
+      // 시청기록이 아닌 페이지에선 반드시 정리
+      removeAllOverlays();
+    }
+  }
+
+  // 시청 기록 아이템들 스캔 (성능 최적화)
   function scanHistoryItems() {
-    // 실제 YouTube 시청 기록 페이지의 셀렉터들
+    
+    // 실제 HTML 구조에 맞는 셀렉터들 (업데이트됨)
     const selectors = [
-      // 일반 동영상 (실제 구조 기반)
-      'yt-lockup-view-model',
-      
-      // 쇼츠 (실제 구조 기반)
-      'ytm-shorts-lockup-view-model',
-      'ytm-shorts-lockup-view-model-v2',
-      
-      // 기존 셀렉터들 (백업용)
-      'ytd-video-renderer',
-      'ytd-compact-video-renderer', 
-      'ytd-rich-item-renderer',
-      'ytd-grid-video-renderer',
-      'ytd-reel-item-renderer',
-      'ytd-video-meta-block',
-      '[id="video-title"]',
-      'ytd-thumbnail-overlay-toggle-button-renderer'
+      'yt-lockup-view-model',           // 새로운 구조 (실제 HTML에서 확인됨)
+      'ytm-shorts-lockup-view-model-v2', // 새로운 Shorts 구조
+      'ytm-shorts-lockup-view-model',    // 기존 Shorts 구조
+      'ytd-video-renderer',             // 기존 구조
+      'ytd-compact-video-renderer',     // 기존 구조
+      'ytd-rich-item-renderer',         // 기존 구조
+      'ytd-item-section-renderer',      // 섹션 렌더러
+      'ytd-grid-video-renderer'         // 그리드 렌더러
     ];
 
     let totalItems = 0;
@@ -550,16 +654,23 @@
       for (const item of items) {
         // 이미 처리된 아이템인지 확인
         if (processedItems.has(item)) continue;
-        
+
+        // 삭제된 아이템인지 확인
+        if (deletedItems.has(item)) {
+          continue;
+        }
+
         // 실제로 썸네일이 있는 아이템인지 확인
         const thumbnail = findThumbnailContainer(item);
         if (thumbnail) {
           addDeleteOverlay(item);
           processedItems.add(item);
           totalItems++;
+        } else {
         }
       }
     }
+    
   }
   
   // 비디오 아이템인지 확인하는 함수
@@ -602,113 +713,57 @@
     return false;
   }
 
-  // DOM 변화 감지
-  function setupMutationObserver() {
-    let scanTimeout = null;
-    
-    const observer = new MutationObserver((mutations) => {
-      let shouldScan = false;
-      
-      for (const mutation of mutations) {
-        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-          for (const node of mutation.addedNodes) {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-              // 실제 YouTube 구조에 맞는 셀렉터들
-              const isHistoryItem = node.matches && (
-                // 일반 동영상
-                node.matches('yt-lockup-view-model') ||
-                // 쇼츠
-                node.matches('ytm-shorts-lockup-view-model') ||
-                node.matches('ytm-shorts-lockup-view-model-v2') ||
-                // 백업 셀렉터들
-                node.matches('ytd-video-renderer') ||
-                node.matches('ytd-compact-video-renderer') ||
-                node.matches('ytd-reel-item-renderer') ||
-                node.matches('ytd-rich-item-renderer') ||
-                node.matches('ytd-grid-video-renderer')
-              );
-              
-              if (isHistoryItem) {
-                shouldScan = true;
-                break;
-              }
-              
-              // 추가된 노드 내부에 비디오 아이템이 있는지도 확인
-              if (node.querySelector && (
-                node.querySelector('yt-lockup-view-model') ||
-                node.querySelector('ytm-shorts-lockup-view-model') ||
-                node.querySelector('ytm-shorts-lockup-view-model-v2') ||
-                node.querySelector('ytd-video-renderer') ||
-                node.querySelector('ytd-compact-video-renderer') ||
-                node.querySelector('ytd-reel-item-renderer')
-              )) {
-                shouldScan = true;
-                break;
-              }
-              
-              // YouTube 이미지가 포함된 노드도 확인 (더 포괄적)
-              if (node.querySelector && node.querySelector('img[src*="ytimg.com"]')) {
-                shouldScan = true;
-                break;
-              }
-            }
-          }
-        }
-      }
-      
-      if (shouldScan) {
-        // 디바운싱: 연속된 변화에 대해 한 번만 스캔
-        if (scanTimeout) {
-          clearTimeout(scanTimeout);
-        }
-        scanTimeout = setTimeout(() => {
-          scanHistoryItems();
-          scanTimeout = null;
-        }, 300);
-      }
-    });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
-
-    return observer;
-  }
-
-  // SPA 네비게이션 감지
+  // SPA 네비게이션 감지 및 라우팅 처리
   function setupNavigationListener() {
-    // YouTube 커스텀 이벤트 리스너
+
+    // 초기 진입 처리
+    onRouteChange();
+
+    // YouTube 내부 라우팅 이벤트
+    document.addEventListener('yt-navigate-start', () => {
+      // 페이지 이동 시작 시 이전 페이지 오버레이 정리
+      removeAllOverlays();
+    });
+
     document.addEventListener('yt-navigate-finish', () => {
-      setTimeout(scanHistoryItems, 500);
+      // 페이지 이동 완료 후 새 페이지 처리
+      setTimeout(() => {
+        onRouteChange();
+      }, 100); // 짧은 지연으로 DOM 안정화 대기
     });
 
-    // 스크롤 이벤트로 무한 스크롤 감지
-    let scrollTimeout = null;
-    window.addEventListener('scroll', () => {
-      if (scrollTimeout) {
-        clearTimeout(scrollTimeout);
-      }
-      scrollTimeout = setTimeout(() => {
-        // 스크롤이 끝난 후 새 아이템이 있는지 확인
-        scanHistoryItems();
-      }, 1000);
+    document.addEventListener('yt-page-data-updated', () => {
+      // 페이지 데이터 업데이트 시에도 처리
+      setTimeout(() => {
+        onRouteChange();
+      }, 100);
     });
 
-    // URL 변화 감지 (폴백)
-    let currentUrl = location.href;
-    setInterval(() => {
-      if (location.href !== currentUrl) {
-        currentUrl = location.href;
-        if (currentUrl.includes('/feed/history')) {
-          setTimeout(scanHistoryItems, 1000);
-        }
-      }
-    }, 1000);
+    // 혹시 모를 pushState 사용 케이스에 대비(보통 위 이벤트로 충분)
+    const _pushState = history.pushState;
+    history.pushState = function(...args) {
+      _pushState.apply(this, args);
+      queueMicrotask(() => {
+        setTimeout(onRouteChange, 100);
+      });
+    };
+    const _replaceState = history.replaceState;
+    history.replaceState = function(...args) {
+      _replaceState.apply(this, args);
+      queueMicrotask(() => {
+        setTimeout(onRouteChange, 100);
+      });
+    };
+
+    window.addEventListener('popstate', () => {
+      setTimeout(onRouteChange, 100);
+    });
+
   }
 
   // 초기화
   function init() {
+    
     // 페이지 로드 완료 대기
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
@@ -717,40 +772,8 @@
       return;
     }
 
-    // 시청 기록 페이지인지 확인 (데스크톱과 모바일 모두)
-    if (!location.href.includes('/feed/history')) {
-      return;
-    }
-    
-    // Shorts 페이지는 제외하되, 시청 기록 페이지 내의 Shorts 영상은 포함
-    if (location.href.includes('/shorts') && !location.href.includes('/feed/history')) {
-      return;
-    }
-
-    // 여러 번 시도하여 스캔
-    const attemptScan = (attempt = 1) => {
-      scanHistoryItems();
-      
-      if (attempt < 5) {
-        setTimeout(() => attemptScan(attempt + 1), 2000);
-      }
-    };
-
-    // 초기 스캔 (여러 번 시도)
-    setTimeout(() => attemptScan(), 1000);
-    
-    // DOM 변화 감지 설정
-    setupMutationObserver();
-    
-    // 네비게이션 감지 설정
+    // 네비게이션 감지 설정 (라우팅 처리 포함)
     setupNavigationListener();
-    
-    // 주기적 스캔 (무한 스크롤 백업)
-    setInterval(() => {
-      if (location.href.includes('/feed/history')) {
-        scanHistoryItems();
-      }
-    }, 5000); // 5초마다 스캔
   }
 
   // 스크립트 시작

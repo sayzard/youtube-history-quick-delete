@@ -42,8 +42,37 @@
 /* 썸네일 컨테이너에 relative 포지셔닝 보정 */
 ytd-video-renderer #thumbnail,
 ytd-compact-video-renderer #thumbnail,
-ytd-reel-item-renderer #thumbnail {
+ytd-reel-item-renderer #thumbnail,
+yt-thumbnail-view-model,
+a.yt-lockup-view-model__content-image,
+a.shortsLockupViewModelHostEndpoint,
+div.shortsLockupViewModelHostThumbnailContainer,
+ytm-shorts-lockup-view-model-v2,
+ytm-shorts-lockup-view-model {
   position: relative !important;
+}
+
+/* 새로운 구조에 대한 추가 스타일 */
+yt-thumbnail-view-model {
+  display: block !important;
+}
+
+.dh-delete-overlay {
+  position: absolute !important;
+  top: 8px !important;
+  left: 8px !important;
+  width: 32px !important;
+  height: 32px !important;
+  background: rgba(0, 0, 0, 0.7) !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  z-index: 9999 !important;
+  transition: all 0.2s ease !important;
+  border: none !important;
+  outline: none !important;
 }
 
 /* 삭제 중 애니메이션 */

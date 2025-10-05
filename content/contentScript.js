@@ -20,10 +20,15 @@
   let mo;                             // MutationObserver
   let initialized = false;
   let deletedItems = new WeakSet();   // 삭제된 아이템 추적
+  let isHistoryPageCache = false;     // 페이지 상태 캐시
+  let scanScheduled = false;          // 스캔 예약 상태
+  let lastScanTime = 0;               // 마지막 스캔 시간
 
-  // 시청기록 페이지인지 확인
+  // 시청기록 페이지인지 확인 (캐시 사용)
   function isHistoryPage() {
-    const isHistory = location.pathname.startsWith('/feed/history');
+    const currentPath = location.pathname;
+    const isHistory = currentPath.startsWith('/feed/history');
+    isHistoryPageCache = isHistory;
     return isHistory;
   }
 
@@ -580,9 +585,36 @@
 
   }
 
+  // 스캔 예약 함수 (throttling 적용)
+  function scheduleScan() {
+    if (scanScheduled) return;
+
+    const now = Date.now();
+    const timeSinceLastScan = now - lastScanTime;
+    const minInterval = 1000; // 최소 1초 간격
+
+    if (timeSinceLastScan < minInterval) {
+      // 너무 빨리 호출되면 지연 예약
+      scanScheduled = true;
+      setTimeout(() => {
+        scanScheduled = false;
+        lastScanTime = Date.now();
+        scanHistoryItems();
+      }, minInterval - timeSinceLastScan);
+    } else {
+      // 즉시 실행
+      scanScheduled = true;
+      requestIdleCallback(() => {
+        scanScheduled = false;
+        lastScanTime = Date.now();
+        scanHistoryItems();
+      }, { timeout: 2000 });
+    }
+  }
+
   // 오버레이 추가 (중복 안전)
   function addOverlaysIfNeeded() {
-    if (!isHistoryPage()) {
+    if (!isHistoryPageCache) {
       return;
     }
     // 이미 초기화했다면 중복 주입 방지
@@ -600,43 +632,57 @@
       // 아이템을 찾지 못했고 재시도 횟수가 남았으면 다시 시도
       if (itemCount === 0 && retryCount < maxRetries) {
         retryCount++;
-        setTimeout(retryScan, 500); // 500ms 후 재시도
-      } else if (itemCount > 0) {
-      } else {
+        setTimeout(retryScan, 500);
       }
     };
     retryScan();
 
-    // 동적 로딩 대응
+    // 동적 로딩 대응 - 최적화된 MutationObserver
     if (!mo) {
       mo = new MutationObserver((mutations) => {
-        if (!isHistoryPage()) {
+        if (!isHistoryPageCache) {
           return;
         }
 
-        // 변화가 있을 때만 스캔 (성능 최적화)
-        let shouldScan = false;
+        // 실제 비디오 아이템 추가만 감지
+        let hasVideoItemAdded = false;
         for (const mutation of mutations) {
           if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-            shouldScan = true;
-            break;
+            for (const node of mutation.addedNodes) {
+              if (node.nodeType === 1) { // Element 노드만
+                const tagName = node.tagName.toLowerCase();
+                // 비디오 아이템 관련 태그만 감지
+                if (tagName.includes('lockup') ||
+                    tagName.includes('renderer') ||
+                    tagName.includes('video')) {
+                  hasVideoItemAdded = true;
+                  break;
+                }
+              }
+            }
+            if (hasVideoItemAdded) break;
           }
         }
 
-        if (shouldScan) {
-          setTimeout(() => {
-            scanHistoryItems();
-          }, 500); // 디바운싱
+        if (hasVideoItemAdded) {
+          scheduleScan();
         }
       });
-      mo.observe(document.body, { childList: true, subtree: true }); // subtree 활성화
+      mo.observe(document.body, {
+        childList: true,
+        subtree: true,
+        // 성능 개선: 속성 변경은 무시
+        attributes: false,
+        characterData: false
+      });
     }
   }
 
   // 라우트 변경 처리
   function onRouteChange() {
+    const currentIsHistory = isHistoryPage();
 
-    if (isHistoryPage()) {
+    if (currentIsHistory) {
       addOverlaysIfNeeded();
     } else {
       // 시청기록이 아닌 페이지에선 반드시 정리
@@ -646,7 +692,6 @@
 
   // 시청 기록 아이템들 스캔 (성능 최적화)
   function scanHistoryItems() {
-
     // 실제 HTML 구조에 맞는 셀렉터들 (업데이트됨)
     const selectors = [
       'yt-lockup-view-model',           // 새로운 구조 (실제 HTML에서 확인됨)
@@ -660,7 +705,10 @@
     ];
 
     let totalItems = 0;
-    let processedItems = new Set();
+    const processedItems = new Set();
+
+    // 배치 처리를 위한 배열
+    const itemsToProcess = [];
 
     for (const selector of selectors) {
       const items = document.querySelectorAll(selector);
@@ -668,6 +716,12 @@
       for (const item of items) {
         // 이미 처리된 아이템인지 확인
         if (processedItems.has(item)) continue;
+
+        // 이미 마운트된 아이템 건너뛰기
+        if (item.getAttribute('data-dh-mounted') === '1') {
+          processedItems.add(item);
+          continue;
+        }
 
         // 삭제된 아이템인지 확인
         if (deletedItems.has(item)) {
@@ -677,11 +731,31 @@
         // 실제로 썸네일이 있는 아이템인지 확인
         const thumbnail = findThumbnailContainer(item);
         if (thumbnail) {
-          addDeleteOverlay(item);
+          itemsToProcess.push(item);
           processedItems.add(item);
-          totalItems++;
         }
       }
+    }
+
+    // 배치로 오버레이 추가 (requestIdleCallback 사용)
+    if (itemsToProcess.length > 0) {
+      const processBatch = (startIndex) => {
+        const batchSize = 10; // 한 번에 10개씩 처리
+        const endIndex = Math.min(startIndex + batchSize, itemsToProcess.length);
+
+        for (let i = startIndex; i < endIndex; i++) {
+          addDeleteOverlay(itemsToProcess[i]);
+          totalItems++;
+        }
+
+        // 더 처리할 아이템이 있으면 다음 배치 예약
+        if (endIndex < itemsToProcess.length) {
+          requestIdleCallback(() => processBatch(endIndex), { timeout: 1000 });
+        }
+      };
+
+      // 첫 배치 시작
+      processBatch(0);
     }
 
     return totalItems; // 처리한 아이템 개수 반환

@@ -150,6 +150,14 @@
       return;
     }
 
+    // 썸네일 컨테이너에 이미 오버레이가 있는지 확인 (중복 방지)
+    const existingOverlayInThumbnail = thumbnail.querySelector('.dh-delete-overlay');
+    if (existingOverlayInThumbnail) {
+      // 이미 오버레이가 있으면 마운트 표시만 하고 종료
+      item.setAttribute('data-dh-mounted', '1');
+      overlayRoots.add(item);
+      return;
+    }
 
     // 썸네일 컨테이너에 relative 포지셔닝 보정
     const computedStyle = window.getComputedStyle(thumbnail);
@@ -578,6 +586,10 @@
     deletedItems = new WeakSet(); // 삭제된 아이템 목록 초기화
     initialized = false;
 
+    // 혹시 놓친 오버레이들도 정리
+    const allOverlays = document.querySelectorAll('.dh-delete-overlay');
+    allOverlays.forEach(overlay => overlay.remove());
+
     if (mo) {
       mo.disconnect();
       mo = null;
@@ -719,8 +731,15 @@
 
         // 이미 마운트된 아이템 건너뛰기
         if (item.getAttribute('data-dh-mounted') === '1') {
-          processedItems.add(item);
-          continue;
+          // 실제로 오버레이가 있는지도 확인
+          const existingOverlay = item.querySelector('.dh-delete-overlay');
+          if (existingOverlay) {
+            processedItems.add(item);
+            continue;
+          } else {
+            // 마운트 표시는 있지만 실제 오버레이가 없으면 다시 처리
+            item.removeAttribute('data-dh-mounted');
+          }
         }
 
         // 삭제된 아이템인지 확인

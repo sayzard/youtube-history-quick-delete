@@ -12,7 +12,10 @@
       'Remove from watch History'
     ],
     RETRY_DELAYS: [100, 200, 500, 1000], // 지수 백오프
-    MAX_RETRIES: 4
+    MAX_RETRIES: 4,
+    // YouTube Shorts는 개별 기록 삭제를 지원하지 않아 임시 비활성화
+    // 지원 시작 시 true로 변경
+    SHORTS_DELETE_ENABLED: false
   };
 
   // SPA 라우팅 관리
@@ -127,11 +130,24 @@
     return null;
   }
 
+  // Shorts 아이템인지 확인
+  function isShortsItem(item) {
+    const tag = item.tagName.toLowerCase();
+    return tag.includes('shorts') ||
+           item.className.includes('shorts') ||
+           item.querySelector('a[href*="/shorts"]') !== null;
+  }
+
   // 아이템에 삭제 오버레이 추가
   function addDeleteOverlay(item) {
-    
+
     // 시청기록 페이지가 아니면 오버레이 추가하지 않음
     if (!isHistoryPage()) {
+      return;
+    }
+
+    // Shorts 개별 삭제가 비활성화된 경우 Shorts 아이템 건너뜀
+    if (!CONFIG.SHORTS_DELETE_ENABLED && isShortsItem(item)) {
       return;
     }
     
@@ -723,6 +739,11 @@
     const itemsToProcess = [];
 
     for (const selector of selectors) {
+      // Shorts 개별 삭제가 비활성화된 경우 Shorts 셀렉터 건너뜀
+      if (!CONFIG.SHORTS_DELETE_ENABLED && selector.toLowerCase().includes('shorts')) {
+        continue;
+      }
+
       const items = document.querySelectorAll(selector);
 
       for (const item of items) {
